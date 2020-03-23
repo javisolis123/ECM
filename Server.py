@@ -1,5 +1,43 @@
 import socket
 import select
+from sqlalchemy import Table, Column, Integer, String, MetaData, ForeignKey, create_engine, Float, DateTime, update, Date, Time
+#from sqlalchemy.sql import select
+from sqlalchemy.sql import select as Select
+import time
+
+hoy = time.strftime("%Y/%d/%m")
+full_time = time.strftime("%H:%M:%S")
+metadata = MetaData()
+todo = Table('todo', metadata,
+     Column('id', Integer, primary_key=True),
+     Column('temperatura', Float()),
+     Column('humedad', Float()),
+     Column('canal1', Float()),
+     Column('canal2', Float()),
+     Column('canal3', Float()),
+     Column('canal4', Float()),
+     Column('hora', Time()),
+ )
+config = Table('config', metadata,
+     Column('id', Integer, primary_key=True),
+     Column('tipo', Integer),
+     Column('frec', Integer),
+ )
+ahora = Table('ahora', metadata,
+     Column('id', Integer, primary_key=True),
+     Column('temperatura', Float()),
+     Column('humedad', Float()),
+     Column('canal1', Float()),
+     Column('canal2', Float()),
+     Column('canal3', Float()),
+     Column('canal4', Float()),
+     Column('hora', Time()),
+ )
+engine = create_engine('mysql+pymysql://javi:javiersolis12@10.0.0.20/Juno')
+connection = engine.connect()
+metadata.create_all(engine)
+
+
 
 HEADER_LENGTH = 10
 
@@ -117,9 +155,46 @@ while True:
 
             # Get user by notified socket, so we will know who sent the message
             user = clients[notified_socket]
-
-            print(f'Received message from {user["data"].decode("utf-8")}: {message["data"].decode("utf-8")}')
-
+            #Guardamos el mensaje recibido del cliente en datos
+            datos = message["data"].decode("utf-8")
+            #Separamos la cadena de datos por comas en sus respectivas variables
+            temp, hum, ch1, ch2, hora = datos.split(",")
+            #Selecciona el valor de la columna tipo de la tabla config
+            t = Select([config.c.tipo])
+            #Ejecutamos la seleccion anterior
+            resultado = connection.execute(t).fetchone()
+            #Creamos todas las tablas que no existieran
+            metadata.create_all(engine)
+            #Seleccionamos todos los datos de la tabla ahora
+            select_ahora = Select([ahora])
+            #Ejecutamos la seleccion anterior
+            tabla_ahora = connection.execute(select_ahora).fetchone()
+            #Valor de tipo de antena DRAGONWAVE
+            if(int(resultado[0])  == 1):
+                #Actualizamos la tabla ahora con el id = 1
+                actual = update(ahora).where(ahora.c.id==1).values(temperatura = temp,
+                                                                   humedad = hum,
+                                                                   canal1 = ch1,
+                                                                   canal2 = ch2,
+                                                                   canal3 = 10.2,
+                                                                   canal4 = 10,
+                                                                   hora = hora)
+                connection.execute(actual)
+                print("Se actualizo la tabla ahora")
+            #Seleccionamos el valor de la columna frecuencia de la tabla config a la vez ejecutamos la instrucción
+            resp_select = connection.execute(Select([config.c.frec])).fetchone()
+            #Convertimos en un entero el valor de la frecuencia
+            frecuencia = int(resp_select[0])
+            if (int(time.strftime("%M")) % frecuencia == 0 and int(time.strftime("%S")) == 5 ):
+                accion_insert = todo.insert().values(temperatura = float(tabla_ahora[1]), 
+                                                    humedad = float(tabla_ahora[2]),
+                                                    canal1 = float(tabla_ahora[3]),
+                                                    canal2 = float(tabla_ahora[4]),
+                                                    canal3 = float(tabla_ahora[5]),
+                                                    canal4 = float(tabla_ahora[6]),
+                                                    hora = tabla_ahora[7])
+                connection.execute(accion_insert)
+                print("Se inserto un nuevo dato en la tabla " + hoy)
             # Iterate over connected clients and broadcast message
             for client_socket in clients:
 
